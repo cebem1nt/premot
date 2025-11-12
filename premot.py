@@ -6,7 +6,8 @@ from select import select
 from keys import API_KEY, ADMIN_ID
 from telebot.types import Message
 
-DOWNLOADS = os.path.expanduser("~/downloads") 
+DOWNLOADS = os.path.expanduser("~/downloads")
+LOG_FILE = open(os.path.expanduser("~/.cache/premot.log"), "a", encoding="utf-8")
 bot = telebot.TeleBot(API_KEY)
 
 class Shell:
@@ -20,7 +21,7 @@ class Shell:
         if shell:
             self.shell = shell
         else:
-            os.environ.get("SHELL", "sh")
+            self.shell = os.environ.get("SHELL", "sh")
 
         if self.child == 0:
             os.environ["TERM"] = "dumb"
@@ -54,6 +55,7 @@ class Shell:
         th.start()
 
     def end(self):
+        bot.edit_message_text("Exiting terminal...", self.msg.chat.id, self.msg.id, parse_mode="Markdown")
         os.close(self.master)
         os.kill(self.child, 9)
         os.waitpid(self.child, 0)
@@ -77,13 +79,18 @@ def terminal(text: bytes):
     return "```terminal\n" + remove_ansii(text.decode()) + "\n```"
 
 def is_admin(msg: Message):
+    log_msg = f"User: {msg.from_user.username} ({msg.from_user.id}), message: " + msg.text
+    LOG_FILE.write(log_msg + '\n')
+    LOG_FILE.flush()
+    print(log_msg)
+
     if msg.from_user.id != int(ADMIN_ID):
         bot.reply_to(msg, "Who the fuck are you?")
         return False
 
     return True
 
-def __handle_document(msg: Message):
+def handle_file(msg: Message):
     bot.reply_to(msg, "Alright, seems like a file, hold on a second")
     file_id = msg.document.file_id
     file_name = msg.document.file_name or file_id
@@ -139,18 +146,18 @@ def shell(msg: Message):
 
 @bot.message_handler(commands=["end"])
 def end(msg: Message):
-    if not is_admin(msg):
+    if not is_admin(msg): 
         return
 
-    sh.end()
-    bot.send_message(msg.chat.id, "Ending terminal")
+    if sh.is_active:
+        sh.end()
 
 @bot.message_handler(content_types=["document"])
 def handle_document(msg: Message):
     if not is_admin(msg):
         return
 
-    __handle_document(msg)
+    handle_file(msg)
 
 @bot.message_handler(func=lambda _: True)
 def handle_any(msg: Message):
@@ -158,7 +165,7 @@ def handle_any(msg: Message):
         return
 
     if msg.document:
-        __handle_document(msg)
+        handle_file(msg)
     elif sh.is_active:
         bot.delete_message(msg.chat.id, msg.id)
         sh.exec(msg.text)
