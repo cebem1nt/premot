@@ -1,4 +1,4 @@
-import telebot, subprocess, os, pty, shlex
+import telebot, subprocess, os, pty, shlex, struct, fcntl, termios, sys
 import threading, re
 
 from select import select
@@ -8,6 +8,7 @@ from telebot.types import Message
 
 DOWNLOADS = os.path.expanduser("~/downloads")
 LOG_FILE = open(os.path.expanduser("~/.cache/premot.log"), "a", encoding="utf-8")
+SEND_NOTIFICATIONS = True
 bot = telebot.TeleBot(API_KEY)
 
 class Shell:
@@ -28,6 +29,9 @@ class Shell:
             os.environ.pop("VIRTUAL_ENV", None)
             os.environ.pop("VIRTUAL_ENV_PROMPT", None)
             os.environ.pop("PS1", None)
+
+            winsize = struct.pack('HHHH', 80, 30, 0, 0)  # rows, cols, x, y
+            fcntl.ioctl(sys.stdout.fileno(), termios.TIOCSWINSZ, winsize)
 
             os.execlp(self.shell, self.shell)
 
@@ -82,7 +86,13 @@ def is_admin(msg: Message):
     log_msg = f"User: {msg.from_user.username} ({msg.from_user.id}), message: " + msg.text
     LOG_FILE.write(log_msg + '\n')
     LOG_FILE.flush()
-    print(log_msg)
+
+    if (SEND_NOTIFICATIONS):
+        subprocess.run(
+            ["notify-send", "-a", "premot", "-n", "state-information",
+            f"User: {msg.from_user.username} ({msg.from_user.id})",
+            "Message: " + msg.text]
+        )
 
     if msg.from_user.id != int(ADMIN_ID):
         bot.reply_to(msg, "Who the fuck are you?")
